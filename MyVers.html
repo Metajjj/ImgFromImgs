@@ -1,0 +1,372 @@
+<html>
+    <head>
+        <title>Images from Images!</title>
+        <style>
+
+            div{
+                display: flex;
+                flex-direction: row;
+            }
+
+            section{margin: 20px; padding-left: 5px;
+            
+                position: sticky;
+            }
+            section input{
+                width: 400px; border: 1px dashed red;
+            }
+        </style>
+    </head>
+    <body>
+        <div>
+        <section>
+            <label for=SecondsPerFunction>Seconds per function (keep above ~.5 to avoid RAM overload)</label>
+            <input id=SecondsPerFunction type="number" min=0 max=60 placeholder="Delay(s) per Function - 0 = no delays! (30/60/120)" value=1>
+            <br>
+            <label for=SubImgSize>How pixel length SI will be</label>
+            <input id=SubImgSize type=number placeholder="SubImgSize (pixel length per side)" onchange="DetectImages()" value=5>
+            <br>
+            <label for=PixelPerfect>Pixel Perfect - (TI.size *= SI)</label>
+            <input id=PixelPerfect type=checkbox style="width: 50px">
+            <br>
+            <label for=TargetImage>Target Image: </label>
+            <input id=TargetImage type="file" onchange="DetectImages()" onclick="this.value=null;">
+            <br>
+            <label for=SourceImages>Source Images: </label>
+            <input id=SourceImages type=file multiple onchange="DetectImages()" onclick="this.value=null;" multiple>
+            <br>
+            <input id=ProgressReport type="text" disabled value="Progress Report">
+        </section>
+        </div>
+        <hr>
+    </body>
+
+    <script>
+        //GLOBAL VARIABLES
+        const TI = document.getElementById("TargetImage");
+        const SI = document.getElementById("SourceImages");
+        const SIS = document.getElementById("SubImgSize");
+        const PP = document.getElementById("PixelPerfect");
+        const PR = document.getElementById("ProgressReport");
+        const SPF = document.getElementById("SecondsPerFunction");
+        
+        let img, ImgH, ImgW, ImgS; //Targets the image container of the TI       
+
+        let ExtensionDictionary={
+            1:".jpg",
+            2:".jpeg",
+            3:".jpe",
+            4:".jif",
+            5:".jfif",
+            6:".jfi",
+            7:".png",
+            8:".gif",
+            9:".webp",
+            10:".tiff",
+            11:".tif",
+            12:".psd",
+            13:".raw",
+            14:".arw",
+            15:".cr2",
+            16:".nrw",
+            17:".k25",
+            18:".bmp",
+            19:".dib",
+            20:".heif",
+            21:".heic",
+            22:".ind",
+            23:".indd",
+            24:".indt",
+            25:".jp2",
+            26:".jpf",
+            27:".jpx",
+            28:".jpm",
+            29:".j2k",
+            30:".mj2",
+            31:".svg",
+            32:".svgz",
+            33:".ai",
+            34:".eps",
+            35:".pdf"
+        }; //List of accepted image extensions
+        let SIlist=[]; //To collect subimages for easier access
+        let canvas; //To build the imitation image
+        let c; //Context of canvas for 2d manipulation
+    
+/*
+==========================FUNCTIONS BELOW ; GLOBALS ABOVE ==================
+*/
+
+        //Waits for Target and Source images before moving to CreateImageT
+        async function DetectImages(){            
+            for(let x of document.querySelectorAll("img")){ x.parentNode.removeChild(x); }
+            for(let x of document.querySelectorAll("canvas")){ x.parentNode.removeChild(x); }
+            
+            if (TI.files.length > 0 && SI.files.length > 0){
+                PR.value = "Target Image & Source Image detected!";
+                
+                //Clean up memory from potential previous usage
+                //TODO better memory management
+                /*TODO multi thread? i.e.
+                    T:-1,-1  |  T:1,-1
+                    T:1,-1  |  T:-1,-1
+                 Set start pos & direction based on name
+
+                */
+
+                //Sleep 2s
+                await new Promise(r => setTimeout(() => r(PR.value = ImageExtCheck()), 2000));
+                
+                console.clear(); CreateImgT();                                
+            } else{ PR.value = "Target Image or Source Image missing!"; }
+        }
+        
+        //To check if given images are imgs
+        function ImageExtCheck (){
+            let unsafe=true;
+            
+            //TargetImage
+            for(let [,x] of Object.entries(ExtensionDictionary)){
+              //console.log(TI.files[0].name.slice((x.length * -1),TI.files[0].name.length).toLowerCase()+"|"+x); 
+                if(TI.files[0].name.slice((x.length * -1), TI.files[0].name.length).toLowerCase() == x){ unsafe=false; }
+            }
+            if(unsafe){ 
+                return "TI has unmatched extension found against 35 known image formats!"; 
+            }
+            
+            //SourceImages
+            for(let y of SI.files){
+                unsafe=true;
+                //console.log(y.name);
+                for(let [,x] of Object.entries(ExtensionDictionary)){
+                    if (y.name.slice((x.length * -1), y.name.length).toLowerCase() == x){
+                        unsafe=false;
+                    }
+                }
+                if (unsafe){
+
+                    //let arr = (Array) (SI.files); SI.files = arr.splice(arr.indexOf(y),1);
+
+                    //PR.value = "One of the SIs have an unmatched extension when compared with our 35 known image formats! Removing..."}
+                    return "Unsafe extension!";
+                }
+            }
+            
+            return "All images are deemed safe!";
+            
+        }
+        
+        //Displays target image, upscales height n width to nearest pixel sending new height n width to ResizeImgT
+        async function CreateImgT (){
+            //console.log(PP.checked);            
+            let FR = new FileReader(); //Has to be seperate
+            FR.readAsDataURL(TI.files[0]);
+            FR.onload = function(){ SrcCheck(FR.result); }
+            
+            let SrcCheck=async(ImgSrc)=>{
+                //Append img
+                img = document.createElement("img");img.setAttribute("src",ImgSrc);
+                ImgS=ImgSrc;
+                document.getElementsByTagName("body")[0].appendChild(img);
+                
+                await new Promise(r=>setTimeout(()=>r(),100));
+                
+                let Q1 = window.getComputedStyle(img);
+
+                ImgH=Math.ceil(Q1.height.slice(0,-2)); ImgW=Math.ceil(Q1.width.slice(0,-2));
+                
+                ResizeImgT();
+            }
+        }
+        
+        //Resizes target image displayed and moves to ResizeSI
+        async function ResizeImgT(){
+            await new Promise(r=>setTimeout(()=>r()),2000)
+            if (ImgH && ImgW){ img.setAttribute("width",ImgW); img.setAttribute("height",ImgH); }
+            else{ PR.value="Error with resizing!"; return; }
+            
+            if(PP.checked){
+                if (! SIS.value){
+                    PR.value="Missing subimgsize for PixelPerfect to take effect!"; return;
+                }
+                //console.log("SS safe!");
+                PR.value="Adjusting TI size!";
+                await new Promise(r=>{setTimeout(()=>{r()},2000)})
+                img.style.height = ImgH * SIS.value; img.style.width = ImgW * SIS.value;
+            }
+            ListSI_ResizeC();
+        }
+        
+        //Return json of avg col rgb
+        async function SIColAvg(IW,IH,Fname){
+            let ColR=0,ColB=0,ColG=0;
+            //Loop thru entire canvas image
+            for(let i=0;i<IW;i++){
+                for(let j=0;j<IH;j++){
+                    let PixelData = c.getImageData(i,j,1,1).data;
+                    ColR += PixelData[0]; ColG += PixelData[1]; ColB += PixelData[2];
+                    //Adds up all colours per pixel
+                }
+            }
+            ColR = Math.floor(ColR /= IW*IH); ColG = Math.floor(ColG /= IW*IH); ColB = Math.floor(ColB /= IW*IH);
+            //Divide total by image size to get the value of the image colour as a pixel (0-255)
+            console.log(`${Fname}\nred:${ColR}\ngreen:${ColG}\nblue:${ColB}`)
+            return {Red: ColR, Green: ColG, Blue: ColB};
+        }
+        
+        //creates canvas and puts Source images into a list and resizes canvas
+        async function ListSI_ResizeC(){
+            if (! SIS.value){ PR.value="Missing subimgsize for SI! (try setting it to 10!)"; return; }
+            
+            //Create canvas
+            canvas = document.createElement("canvas");canvas.setAttribute("id","result");
+            document.getElementsByTagName("body")[0].appendChild(canvas);
+            
+            //Resize canvas
+            canvas.height = (PP.checked ? ImgH * SIS.value : ImgH );
+            canvas.width = (PP.checked ? ImgW * SIS.value : ImgW);
+            
+            c = canvas.getContext("2d",{willReadFrequently: true}); 
+            //c.rect(0,0,canvas.width,canvas.height); c.fillStyle="Red"; c.fill(); console.log( "red:"+c.getImageData(0,0,1,1).data[0]+"\nblue:"+c.getImageData(0,0,1,1).data[1]+"\ngreen:"+c.getImageData(0,0,1,1).data[2]+"\nalpha:"+c.getImageData(0,0,1,1).data[3] );
+            
+            //Grab SIs into a list as json (name, img data, isitcropped)
+            let cnt=0;
+            for(let file of SI.files){
+                //Promise to resolve when filereader finishes loading
+                PR.value = `Reading: ${file.name}... ${cnt+1}/${SI.files.length}`
+                    //TODO update PR as it reads.. x/x% read
+                
+                await new Promise(r=>{
+                    let fr = new FileReader();
+
+                    fr.onprogress = async function(progEvent){
+                        if( progEvent.lengthComputable ){
+                            //If measurable progress
+                            let pct = progEvent.total / progEvent.loaded;
+                            PR.value = `Reading: ${file.name}... ${cnt+1}/${SI.files.length} | ${ Math.round(pct * 100) / 100 }%`
+                        }
+                    }
+
+                    fr.readAsDataURL(file);
+
+                    fr.onloadend = async function(){
+
+                        img.removeAttribute("src"); img.removeAttribute("width"); img.removeAttribute("height");
+                        await img.setAttribute("src",fr.result)
+
+                        IW=Math.ceil(getComputedStyle(img).width.slice(0,-2)); IH=Math.ceil(getComputedStyle(img).height.slice(0,-2));                    
+
+                        canvas.setAttribute("width",IW); canvas.setAttribute("height",IH);
+                        
+                        if(img.state == "broken"){
+                            
+                        }
+
+                        c.drawImage(img,0,0);
+
+                        //Based on pixel, fails to get whole image                    console.log(`myVers\nred:${c.getImageData(0,0,IW,IH).data[0]}\ngreen:${c.getImageData(0,0,IW,IH).data[1]}\nblue:${c.getImageData(0,0,IW,IH).data[2]}\nalpha:${c.getImageData(0,0,IW,IH).data[3]}`);
+
+                        let a = await SIColAvg(IW,IH,file.name); let b=[];
+                        for(let i in a){ b.push(a[i]); }
+                        
+                        SIlist.push( { Name: file.name, Img: fr.result, Width: IW, Height: IH, AvgRed:b[0], AvgGreen:b[1], AvgBlue:b[2] } );
+
+                        cnt++; r(); 
+                        //As a promise it has to return an argument it puts in or it isnt complete
+                    }
+                    delete fr; //Delete to save memory
+                });
+            };
+            
+            if(cnt == SI.files.length){
+                await img.setAttribute("src",ImgS);
+                PR.value = "All given files read";
+                
+                IW=Math.ceil(getComputedStyle(img).width.slice(0,-2)); IH=Math.ceil(getComputedStyle(img).height.slice(0,-2));
+                
+                    //TODO needs comments
+
+                IW = (PP.checked ? IW*SIS.value/2 : IW*2);
+                IH = (PP.checked ? IH*SIS.value/2 : IH*2);
+                //console.log(`W:${IW} | H:${IH}`);
+                canvas.setAttribute("width", IW ); canvas.setAttribute("height", IH );
+                c.drawImage(img,0,0,canvas.getAttribute("width"),canvas.getAttribute("height"));
+                
+                img.setAttribute("width", IW );
+                img.setAttribute("height", IH );
+                
+                ThrowDownPixels(IW,IH);
+            }
+        }
+        
+        async function GetBestSIforCurrPix(PD){
+            Res={}
+            for(let SI of SIlist){
+        // TODO needs comments
+
+                absR = Math.abs(SI.AvgRed - PD[0]); absG = Math.abs(SI.AvgGreen - PD[1]); absB = Math.abs(SI.AvgBlue - PD[2]);
+                TotalDeviation = absR+absG+absB;
+                //console.log(`${SI.Name} has deviation of: ${TotalDeviation} | ${absR}:${absG}:${absB}`);
+                Res[TotalDeviation] = SI.Name;
+            }
+            
+            //for(let f in Res){ console.log(`Ran: ${f} : ${Res[f]}`); } //Auto sorts the list
+            for(let f in Res){
+                return [Res[f]];
+            }
+            
+        }
+        
+        async function ThrowDownPixels(IW,IH){
+            PR.value = "Building image...";
+            
+            //Get the rbg of current pixel, compare it to SIlist..
+            //get closest match from CPrgb - SIlist to 0 abs
+            //Throw in the SI, move to next pixel
+            
+            //Loop thru entire canvas image
+            // IF PP - Go by 1 pixel at a time - resize SI to 2,2 ELSE go by SIS - resize SI to SIS
+            let Increment = (PP.checked ? 2 : Number(SIS.value));
+            //return; //random return ruins the code why??
+            for(let i=0;i<IW;i+=Increment){
+                for(let j=0;j<IH;j+=Increment){
+                    
+                    setTimeout(async()=>{
+                        console.log(`${i} / ${IW} width | ${j} / ${IH} height`)
+                        //PR.value = `Building image... ${ ((i/IW)*50) + ((j/IH)*50) }%`;
+                        PR.value = `Building image... ${ ((i/IW)*100) }%`;
+
+                        let PixelData = c.getImageData(i,j,1,1).data;
+                        let Ran = await GetBestSIforCurrPix(PixelData);
+
+                        for(let f of SIlist){
+                            if (f.Name == Ran){
+                                //console.log(f.Img);
+                                //Gif doesnt animate in canvas!
+
+                                await img.setAttribute("src",f.Img); c.drawImage(img,i,j,Increment,Increment)
+                                //Img,startX,startY,ResizeX,ResizeY
+                            }
+                        }
+                    }, SPF.value *1000
+                        //TODO sort delay, just queues them all to run at same time
+                    );
+                }
+            }
+
+            setTimeout(() => {
+                PR.value="DONE";
+
+                let FR = new FileReader(); //Has to be seperate
+                FR.readAsDataURL(TI.files[0]);
+                FR.onload = function(){ img.setAttribute("src",FR.result); }
+
+                //Create a button to download canvas vers?
+                let section = getElementById("ProgressReport").parentNode;
+
+            }, SPF.value * 1000 );
+        }
+    
+        
+    </script>
+</html>
