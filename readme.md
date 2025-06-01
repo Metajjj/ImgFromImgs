@@ -1,0 +1,1 @@
+Tried to create the original image based on given collection of images.
