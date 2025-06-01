@@ -295,7 +295,8 @@
                 img.setAttribute("width", IW );
                 img.setAttribute("height", IH );
                 
-                ThrowDownPixels(IW,IH);
+                setTimeout(()=> ThrowDownPixels(IW,IH), 50);
+                    //Allows queueing when SetTimeout!
             }
         }
         
@@ -360,9 +361,6 @@
                 let FR = new FileReader(); //Has to be seperate
                 FR.readAsDataURL(TI.files[0]);
                 FR.onload = function(){ img.setAttribute("src",FR.result); }
-
-                //Create a button to download canvas vers?
-                let section = getElementById("ProgressReport").parentNode;
 
             }, SPF.value * 1000 );
         }
